@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1v1 Flappy Battle</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        #gameContainer {
+            border: 3px solid #fff;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.3);
+        }
+        
+        #ui {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1000;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .search-screen {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            text-align: center;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .abilities {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: space-around;
+            pointer-events: auto;
+        }
+        
+        .ability-btn {
+            background: linear-gradient(45deg, #ff6b6b, #ee5a24);
+            border: none;
+            border-radius: 50px;
+            color: white;
+            font-weight: bold;
+            padding: 15px 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            min-width: 120px;
+            position: relative;
+        }
+        
+        .ability-btn:hover:not(:disabled) {
+            transform: scale(1.1);
+            box-shadow: 0 5px 15px rgba(255,107,107,0.4);
+        }
+        
+        .ability-btn:disabled {
+            background: #666;
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+        
+        .cooldown {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #f39c12;
+            color: white;
+            border-radius: 50%;
+            width: 25px;
+            height: 25px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+        
+        .game-info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        
+        .center-line {
+            position: absolute;
+            left: 50%;
+            top: 0;
+            width: 2px;
+            height: 100%;
+            background: rgba(255,255,255,0.3);
+            transform: translateX(-50%);
+        }
+        
+        .player-label {
+            position: absolute;
+            top: 10px;
+            background: rgba(0,0,0,0.8);
+            padding: 5px 15px;
+            border-radius: 15px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
+        .player1-label {
+            left: 25%;
+            transform: translateX(-50%);
+            color: #3498db;
+        }
+        
+        .player2-label {
+            right: 25%;
+            transform: translateX(50%);
+            color: #e74c3c;
+        }
+        
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            font-size: 24px;
+        }
+        
+        .status-effects {
+            position: absolute;
+            top: 60px;
+            left: 20px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            max-width: 200px;
+        }
+        
+        .effect {
+            margin: 2px 0;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+        
+        .effect.shield { background: rgba(52, 152, 219, 0.5); }
+        .effect.reversed { background: rgba(231, 76, 60, 0.5); }
+        .effect.emp { background: rgba(155, 89, 182, 0.5); }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="searchScreen" class="search-screen">
+            <h1>🐦 Flappy Battle Royale 🐦</h1>
+            <h3>Searching for opponent...</h3>
+            <div class="spinner"></div>
+            <p>Waiting for another player to join...</p>
+        </div>
+        
+        <div id="ui" style="display: none;">
+            <div class="center-line"></div>
+            <div class="player-label player1-label">Player 1 (YOU)</div>
+            <div class="player-label player2-label">Player 2 (OPPONENT)</div>
+            
+            <div class="game-info">
+                <div>Room: <span id="roomInfo">-</span></div>
+                <div>Status: <span id="gameStatus">Waiting...</span></div>
+            </div>
+            
+            <div class="status-effects" id="statusEffects"></div>
+            
+            <div class="abilities">
+                <button class="ability-btn" id="fireballBtn" onclick="useAbility('fireball')">
+                    🔥 Fireball
+                    <span class="cooldown" id="fireballCooldown" style="display: none;">5</span>
+                </button>
+                <button class="ability-btn" id="reverseBtn" onclick="useAbility('reverse')">
+                    🔄 Reverse
+                    <span class="cooldown" id="reverseCooldown" style="display: none;">8</span>
+                </button>
+                <button class="ability-btn" id="empBtn" onclick="useAbility('emp')">
+                    ⚡ EMP
+                    <span class="cooldown" id="empCooldown" style="display: none;">10</span>
+                </button>
+                <button class="ability-btn" id="shieldBtn" onclick="useAbility('shield')">
+                    🛡️ Shield
+                    <span class="cooldown" id="shieldCooldown" style="display: none;">15</span>
+                </button>
+            </div>
+        </div>
+        
+        <div id="gameOver" class="game-over" style="display: none;">
+            <h2 id="gameOverTitle">Game Over!</h2>
+            <p id="gameOverMessage"></p>
+            <button onclick="location.reload()" style="background: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin-top: 15px;">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        // Game variables
+        let socket;
+        let game;
+        let playerNumber = null;
+        let roomId = null;
+        let gameStarted = false;
+        let gameSeed = null;
+        
+        // Game objects
+        let player1Bird, player2Bird;
+        let pipes = [];
+        let backgrounds = [];
+        let projectiles = [];
+        
+        // Game state
+        let player1Alive = true;
+        let player2Alive = true;
+        let pipeSpeed = 2;
+        let nextPipeX = 400;
+        let rng; // Seeded random number generator
+        
+        // Ability cooldowns and effects
+        let abilityCooldowns = {
+            fireball: 0,
+            reverse: 0,
+            emp: 0,
+            shield: 0
+        };
+        
+        let statusEffects = {
+            shield: false,
+            reversed: false,
+            empDisabled: false
+        };
+        
+        // Initialize socket connection
+        function initSocket() {
+            socket = io();
+            
+            socket.on('searching', () => {
+                updateStatus('Searching for opponent...');
+            });
+            
+            socket.on('matchFound', (data) => {
+                roomId = data.roomId;
+                playerNumber = data.playerNumber;
+                document.getElementById('roomInfo').textContent = roomId;
+                updateStatus('Match found! Preparing game...');
+                
+                // Hide search screen and show game
+                document.getElementById('searchScreen').style.display = 'none';
+                document.getElementById('ui').style.display = 'block';
+                
+                // Initialize Phaser game
+                initPhaserGame();
+                
+                // Signal ready
+                socket.emit('playerReady');
+            });
+            
+            socket.on('gameStart', (data) => {
+                gameSeed = data.seed;
+                gameStarted = true;
+                updateStatus('Game Started!');
+                initRandomSeed(gameSeed);
+                startGameLoop();
+            });
+            
+            socket.on('playerAssignment', (data) => {
+                playerNumber = data.playerNumber;
+                updatePlayerLabels();
+            });
+            
+            socket.on('opponentFlap', (data) => {
+                if (data.playerNumber === 1 && player1Bird && data.playerNumber !== playerNumber) {
+                    player1Bird.body.setVelocityY(-300);
+                } else if (data.playerNumber === 2 && player2Bird && data.playerNumber !== playerNumber) {
+                    player2Bird.body.setVelocityY(-300);
+                }
+            });
+            
+            socket.on('opponentPosition', (data) => {
+                if (data.playerNumber !== playerNumber) {
+                    const bird = data.playerNumber === 1 ? player1Bird : player2Bird;
+                    if (bird) {
+                        bird.y = data.y;
+                        bird.body.setVelocityY(data.velocityY);
+                    }
+                }
+            });
+            
+            socket.on('opponentAbility', (data) => {
+                handleOpponentAbility(data);
+            });
+            
+            socket.on('gameOver', (data) => {
+                gameStarted = false;
+                showGameOver(data);
+            });
+            
+            socket.on('opponentDisconnected', () => {
+                showGameOver({
+                    winner: playerNumber,
+                    cause: 'opponent disconnected'
+                });
+            });
+        }
+        
+        // Seeded random number generator
+        function initRandomSeed(seed) {
+            rng = new Math.seedrandom ? Math.seedrandom(seed) : Math.random;
+        }
+        
+        // Initialize Phaser game
+        function initPhaserGame() {
+            const config = {
+                type: Phaser.AUTO,
+                width: 800,
+                height: 600,
+                parent: 'gameContainer',
+                physics: {
+                    default: 'arcade',
+                    arcade: {
+                        gravity: { y: 600 },
+                        debug: false
+                    }
+                },
+                scene: {
+                    preload: preload,
+                    create: create,
+                    update: update
+                }
+            };
+            
+            game = new Phaser.Game(config);
+        }
+        
+        function preload() {
+            // Load custom assets if available, otherwise create default ones
+            
+            // Try to load custom background image
+            try {
+                this.load.image('background', 'assets/background.png');
+            } catch (e) {
+                // Create default background
+                this.add.rectangle(0, 0, 800, 600, 0x87CEEB);
+            }
+            
+            // Try to load custom bird sprite/animation
+            try {
+                this.load.spritesheet('bird', 'assets/bird.png', { frameWidth: 32, frameHeight: 32 });
+            } catch (e) {
+                // Create default bird sprite
+                this.add.graphics()
+                    .fillStyle(0xFFD700)
+                    .fillCircle(16, 16, 16)
+                    .strokeStyle(0xFF8C00, 2)
+                    .strokeCircle(16, 16, 16)
+                    .generateTexture('bird', 32, 32);
+            }
+            
+            // Try to load custom pipe sprites
+            try {
+                this.load.image('pipe', 'assets/pipe.png');
+            } catch (e) {
+                // Create default pipe sprite
+                this.add.graphics()
+                    .fillStyle(0x228B22)
+                    .fillRect(0, 0, 60, 400)
+                    .strokeStyle(0x006400, 3)
+                    .strokeRect(0, 0, 60, 400)
+                    .generateTexture('pipe');
+            }
+            
+            // Try to load custom projectile
+            try {
+                this.load.image('fireball', 'assets/fireball.png');
+            } catch (e) {
+                // Create default fireball sprite
+                this.add.graphics()
+                    .fillStyle(0xFF4500)
+                    .fillCircle(8, 8, 8)
+                    .fillStyle(0xFFFF00)
+                    .fillCircle(8, 8, 5)
+                    .generateTexture('fireball', 16, 16);
+            }
+            
+            // Try to load custom sound effects
+            try {
+                this.load.audio('flap', 'assets/flap.wav');
+                this.load.audio('hit', 'assets/hit.wav');
+                this.load.audio('ability', 'assets/ability.wav');
+            } catch (e) {
+                // No audio fallback needed
+            }
+        }
+        
+        function create() {
+            // Create background
+            if (this.textures.exists('background')) {
+                this.add.image(400, 300, 'background').setDisplaySize(800, 600);
+            } else {
+                this.add.rectangle(400, 300, 800, 600, 0x87CEEB);
+            }
+            
+            // Create animated background elements (clouds, etc.)
+            this.backgroundElements = this.add.group();
+            for (let i = 0; i < 5; i++) {
+                const cloud = this.add.ellipse(
+                    Math.random() * 800, 
+                    Math.random() * 200 + 50, 
+                    60 + Math.random() * 40, 
+                    30 + Math.random() * 20, 
+                    0xFFFFFF, 
+                    0.7
+                );
+                this.backgroundElements.add(cloud);
+            }
+            
+            // Create center divider
+            this.add.rectangle(400, 300, 4, 600, 0xFFFFFF, 0.3);
+            
+            // Create birds with improved physics
+            player1Bird = this.physics.add.sprite(150, 300, 'bird');
+            player1Bird.setBounce(0);
+            player1Bird.setCollideWorldBounds(false); // Allow birds to go off screen for proper death detection
+            player1Bird.setTint(0x3498db);
+            player1Bird.setScale(1.2);
+            
+            player2Bird = this.physics.add.sprite(650, 300, 'bird');
+            player2Bird.setBounce(0);
+            player2Bird.setCollideWorldBounds(false);
+            player2Bird.setTint(0xe74c3c);
+            player2Bird.setScale(1.2);
+            
+            // Create bird animations if spritesheet is loaded
+            if (this.textures.get('bird').frames.length > 1) {
+                this.anims.create({
+                    key: 'fly',
+                    frames: this.anims.generateFrameNumbers('bird', { start: 0, end: 2 }),
+                    frameRate: 10,
+                    repeat: -1
+                });
+                player1Bird.play('fly');
+                player2Bird.play('fly');
+            }
+            
+            // Create physics groups
+            this.pipesGroup = this.physics.add.group();
+            this.projectilesGroup = this.physics.add.group();
+            
+            // Input handling - prevent accidental flaps
+            let lastFlapTime = 0;
+            this.input.on('pointerdown', () => {
+                const currentTime = this.time.now;
+                if (gameStarted && currentTime - lastFlapTime > 150) { // Prevent rapid flapping
+                    lastFlapTime = currentTime;
+                    flapBird();
+                }
+            });
+            
+            this.input.keyboard.on('keydown-SPACE', () => {
+                const currentTime = this.time.now;
+                if (gameStarted && currentTime - lastFlapTime > 150) {
+                    lastFlapTime = currentTime;
+                    flapBird();
+                }
+            });
+            
+            // Set up collision detection with proper bounds
+            this.physics.add.overlap(player1Bird, this.pipesGroup, (bird, pipe) => {
+                if (bird === player1Bird && playerNumber === 1) {
+                    hitPipe(bird, pipe);
+                }
+            }, null, this);
+            
+            this.physics.add.overlap(player2Bird, this.pipesGroup, (bird, pipe) => {
+                if (bird === player2Bird && playerNumber === 2) {
+                    hitPipe(bird, pipe);
+                }
+            }, null, this);
+            
+            this.physics.add.overlap(player1Bird, this.projectilesGroup, (bird, projectile) => {
+                if (bird === player1Bird && playerNumber === 1) {
+                    hitByProjectile(bird, projectile);
+                }
+            }, null, this);
+            
+            this.physics.add.overlap(player2Bird, this.projectilesGroup, (bird, projectile) => {
+                if (bird === player2Bird && playerNumber === 2) {
+                    hitByProjectile(bird, projectile);
+                }
+            }, null, this);
+            
+            // Add particle effects
+            this.particles = this.add.particles(0, 0, 'fireball', {
+                scale: 0.2,
+                speed: { min: 50, max: 100 },
+                lifespan: 300,
+                quantity: 0
+            });
+        }
+        
+        function update() {
+            if (!gameStarted) return;
+            
+            // Animate background elements
+            this.backgroundElements.children.entries.forEach(cloud => {
+                cloud.x -= 0.5;
+                if (cloud.x < -50) {
+                    cloud.x = 850;
+                }
+            });
+            
+            // Update ability cooldowns
+            updateCooldowns();
+            
+            // Generate pipes with proper spacing
+            if (!this.nextPipeTime) {
+                this.nextPipeTime = this.time.now + 2500; // First pipe after 2.5 seconds
+            }
+            
+            if (this.time.now >= this.nextPipeTime) {
+                generatePipes(this);
+                this.nextPipeTime = this.time.now + 2000; // Next pipe every 2 seconds
+            }
+            
+            // Move pipes and clean up
+            this.pipesGroup.children.entries.forEach(pipe => {
+                pipe.x -= pipeSpeed;
+                if (pipe.x < -100) {
+                    pipe.destroy();
+                }
+            });
+            
+            // Move projectiles and clean up
+            this.projectilesGroup.children.entries.forEach(projectile => {
+                if (projectile.x < -50 || projectile.x > 850) {
+                    projectile.destroy();
+                }
+            });
+            
+            // Send position updates less frequently to reduce network load
+            if (!this.lastUpdateTime || this.time.now - this.lastUpdateTime > 50) {
+                this.lastUpdateTime = this.time.now;
+                if (playerNumber === 1 && player1Bird) {
+                    sendPositionUpdate(player1Bird);
+                } else if (playerNumber === 2 && player2Bird) {
+                    sendPositionUpdate(player2Bird);
+                }
+            }
+            
+            // Check for death by falling/ceiling with proper bounds
+            const myBird = playerNumber === 1 ? player1Bird : player2Bird;
+            if (myBird && gameStarted) {
+                if (myBird.y <= -20 || myBird.y >= 620) {
+                    console.log('Player death by boundary:', myBird.y);
+                    playerDeath('boundary');
+                }
+            }
+            
+            // Rotate birds based on velocity for better animation
+            if (player1Bird) {
+                player1Bird.rotation = Math.max(-0.5, Math.min(0.5, player1Bird.body.velocity.y * 0.003));
+            }
+            if (player2Bird) {
+                player2Bird.rotation = Math.max(-0.5, Math.min(0.5, player2Bird.body.velocity.y * 0.003));
+            }
+        }
+        
+        function generatePipes(scene) {
+            const gapHeight = 180; // Increased gap size
+            const minPipeHeight = 80; // Minimum pipe height
+            const maxPipeHeight = 350; // Maximum pipe height
+            
+            // Use seeded random for consistent pipe generation
+            const randomValue = rng ? rng() : Math.random();
+            const pipeHeight = minPipeHeight + (randomValue * (maxPipeHeight - minPipeHeight));
+            
+            const pipeX = 900; // Start pipes off-screen
+            
+            // Player 1 side (left) - pipes between x: 50 and x: 350
+            const p1X = 200;
+            
+            // Top pipe for player 1
+            const topPipe1 = scene.physics.add.sprite(p1X, pipeHeight / 2, 'pipe');
+            topPipe1.setOrigin(0.5, 1);
+            topPipe1.setDisplaySize(60, pipeHeight);
+            topPipe1.body.setSize(60, pipeHeight);
+            topPipe1.setImmovable(true);
+            scene.pipesGroup.add(topPipe1);
+            
+            // Bottom pipe for player 1
+            const bottomHeight = 600 - pipeHeight - gapHeight;
+            const bottomPipe1 = scene.physics.add.sprite(p1X, pipeHeight + gapHeight + bottomHeight / 2, 'pipe');
+            bottomPipe1.setOrigin(0.5, 0.5);
+            bottomPipe1.setDisplaySize(60, bottomHeight);
+            bottomPipe1.body.setSize(60, bottomHeight);
+            bottomPipe1.setImmovable(true);
+            scene.pipesGroup.add(bottomPipe1);
+            
+            // Player 2 side (right) - mirrored pipes between x: 450 and x: 750
+            const p2X = 600;
+            
+            // Top pipe for player 2 (same height as player 1)
+            const topPipe2 = scene.physics.add.sprite(p2X, pipeHeight / 2, 'pipe');
+            topPipe2.setOrigin(0.5, 1);
+            topPipe2.setDisplaySize(60, pipeHeight);
+            topPipe2.body.setSize(60, pipeHeight);
+            topPipe2.setImmovable(true);
+            scene.pipesGroup.add(topPipe2);
+            
+            // Bottom pipe for player 2 (same height as player 1)
+            const bottomPipe2 = scene.physics.add.sprite(p2X, pipeHeight + gapHeight + bottomHeight / 2, 'pipe');
+            bottomPipe2.setOrigin(0.5, 0.5);
+            bottomPipe2.setDisplaySize(60, bottomHeight);
+            bottomPipe2.body.setSize(60, bottomHeight);
+            bottomPipe2.setImmovable(true);
+            scene.pipesGroup.add(bottomPipe2);
+            
+            console.log('Generated pipes at', p1X, p2X, 'with gap at', pipeHeight, 'to', pipeHeight + gapHeight);
+        }
+        
+        function flapBird() {
+            if (!gameStarted) return;
+            
+            const isReversed = statusEffects.reversed;
+            const velocity = isReversed ? 250 : -320; // Adjusted for better control
+            
+            if (playerNumber === 1 && player1Bird) {
+                player1Bird.body.setVelocityY(velocity);
+                socket.emit('playerFlap', { y: player1Bird.y, velocityY: velocity });
+                
+                // Play flap sound if available
+                if (game.scene.scenes[0].sound.get('flap')) {
+                    game.scene.scenes[0].sound.play('flap', { volume: 0.3 });
+                }
+            } else if (playerNumber === 2 && player2Bird) {
+                player2Bird.body.setVelocityY(velocity);
+                socket.emit('playerFlap', { y: player2Bird.y, velocityY: velocity });
+                
+                // Play flap sound if available
+                if (game.scene.scenes[0].sound.get('flap')) {
+                    game.scene.scenes[0].sound.play('flap', { volume: 0.3 });
+                }
+            }
+        }
+        
+        function sendPositionUpdate(bird) {
+            if (!bird || !socket) return;
+            
+            socket.emit('playerPosition', {
+                y: Math.round(bird.y),
+                velocityY: Math.round(bird.body.velocity.y)
+            });
+        }
+        
+        function hitPipe(bird, pipe) {
+            console.log('Hit pipe detected for player', playerNumber);
+            
+            // Add particle effect at collision point
+            const scene = game.scene.scenes[0];
+            if (scene.particles) {
+                scene.particles.emitParticleAt(bird.x, bird.y, 10);
+            }
+            
+            // Play hit sound if available
+            if (scene.sound.get('hit')) {
+                scene.sound.play('hit', { volume: 0.5 });
+            }
+            
+            playerDeath('pipe collision');
+        }
+        
+        function hitByProjectile(bird, projectile) {
+            if (!statusEffects.shield) {
+                console.log('Hit by projectile for player', playerNumber);
+                
+                // Add particle effect
+                const scene = game.scene.scenes[0];
+                if (scene.particles) {
+                    scene.particles.emitParticleAt(bird.x, bird.y, 15);
+                }
+                
+                projectile.destroy();
+                playerDeath('fireball');
+            } else {
+                // Shield blocks the attack
+                console.log('Attack blocked by shield');
+                projectile.destroy();
+                statusEffects.shield = false;
+                updateStatusEffects();
+                
+                // Visual feedback for shield
+                const scene = game.scene.scenes[0];
+                const shield = scene.add.circle(bird.x, bird.y, 40, 0x00FFFF, 0.5);
+                scene.tweens.add({
+                    targets: shield,
+                    alpha: 0,
+                    scaleX: 2,
+                    scaleY: 2,
+                    duration: 500,
+                    onComplete: () => shield.destroy()
+                });
+            }
+        }
+        
+        let isPlayerDead = false;
+        function playerDeath(cause) {
+            if (gameStarted && !isPlayerDead) {
+                console.log('Player death triggered:', cause);
+                isPlayerDead = true;
+                gameStarted = false;
+                socket.emit('playerDeath', { cause: cause });
+            }
+        }
+        
+        function useAbility(abilityType) {
+            if (!gameStarted || statusEffects.empDisabled || abilityCooldowns[abilityType] > 0) {
+                return;
+            }
+            
+            // Set cooldown
+            switch(abilityType) {
+                case 'fireball':
+                    abilityCooldowns.fireball = 5;
+                    castFireball();
+                    break;
+                case 'reverse':
+                    abilityCooldowns.reverse = 8;
+                    castReverse();
+                    break;
+                case 'emp':
+                    abilityCooldowns.emp = 10;
+                    castEMP();
+                    break;
+                case 'shield':
+                    abilityCooldowns.shield = 15;
+                    castShield();
+                    break;
+            }
+            
+            // Notify opponent
+            socket.emit('abilityUsed', { 
+                ability: abilityType,
+                playerNumber: playerNumber
+            });
+        }
+        
+        function castFireball() {
+            const scene = game.scene.scenes[0];
+            if (!scene) return;
+            
+            const myBird = playerNumber === 1 ? player1Bird : player2Bird;
+            if (!myBird) return;
+            
+            const startX = playerNumber === 1 ? myBird.x + 30 : myBird.x - 30;
+            const direction = playerNumber === 1 ? 1 : -1;
+            
+            const fireball = scene.physics.add.sprite(startX, myBird.y, 'fireball');
+            fireball.body.setVelocityX(direction * 400);
+            fireball.setScale(1.5);
+            scene.projectilesGroup.add(fireball);
+            
+            // Add trail effect
+            scene.tweens.add({
+                targets: fireball,
+                rotation: Math.PI * 4,
+                duration: 2000
+            });
+            
+            // Play ability sound
+            if (scene.sound.get('ability')) {
+                scene.sound.play('ability', { volume: 0.4 });
+            }
+            
+            // Auto-destroy after 3 seconds
+            setTimeout(() => {
+                if (fireball && fireball.active) {
+                    fireball.destroy();
+                }
+            }, 3000);
+        }
+        
+        function startGameLoop() {
+            console.log('Starting game loop with seed:', gameSeed);
+            
+            // Reset game state
+            isPlayerDead = false;
+            pipes = [];
+            projectiles = [];
+            
+            // Reset Phaser scene timing
+            const scene = game.scene.scenes[0];
+            if (scene) {
+                scene.nextPipeTime = null;
+                scene.lastUpdateTime = 0;
+            }
+            
+            // Reset status effects
+            statusEffects = {
+                shield: false,
+                reversed: false,
+                empDisabled: false
+            };
+            
+            // Reset cooldowns
+            abilityCooldowns = {
+                fireball: 0,
+                reverse: 0,
+                emp: 0,
+                shield: 0
+            };
+            
+            updateStatusEffects();
+            
+            // Position birds at starting positions
+            if (player1Bird) {
+                player1Bird.setPosition(150, 300);
+                player1Bird.body.setVelocity(0, 0);
+            }
+            if (player2Bird) {
+                player2Bird.setPosition(650, 300);
+                player2Bird.body.setVelocity(0, 0);
+            }
+        }
+        
+        function handleOpponentAbility(data) {
+            switch(data.ability) {
+                case 'fireball':
+                    // Handle opponent's fireball
+                    break;
+                case 'reverse':
+                    statusEffects.reversed = true;
+                    updateStatusEffects();
+                    setTimeout(() => {
+                        statusEffects.reversed = false;
+                        updateStatusEffects();
+                    }, 3000);
+                    break;
+                case 'emp':
+                    statusEffects.empDisabled = true;
+                    updateStatusEffects();
+                    setTimeout(() => {
+                        statusEffects.empDisabled = false;
+                        updateStatusEffects();
+                    }, 3000);
+                    break;
+                case 'shield':
+                    // Shield only affects the caster
+                    break;
+            }
+        }
+        
+        function updateCooldowns() {
+            Object.keys(abilityCooldowns).forEach(ability => {
+                if (abilityCooldowns[ability] > 0) {
+                    abilityCooldowns[ability] -= 1/60; // Assuming 60 FPS
+                    if (abilityCooldowns[ability] <= 0) {
+                        abilityCooldowns[ability] = 0;
+                    }
+                }
+                
+                const btn = document.getElementById(ability + 'Btn');
+                const cooldownSpan = document.getElementById(ability + 'Cooldown');
+                
+                if (abilityCooldowns[ability] > 0) {
+                    btn.disabled = true;
+                    cooldownSpan.style.display = 'flex';
+                    cooldownSpan.textContent = Math.ceil(abilityCooldowns[ability]);
+                } else {
+                    btn.disabled = statusEffects.empDisabled;
+                    cooldownSpan.style.display = 'none';
+                }
+            });
+        }
+        
+        function updateStatusEffects() {
+            const statusDiv = document.getElementById('statusEffects');
+            statusDiv.innerHTML = '';
+            
+            if (statusEffects.shield) {
+                const effect = document.createElement('div');
+                effect.className = 'effect shield';
+                effect.textContent = '🛡️ Shield Active';
+                statusDiv.appendChild(effect);
+            }
+            
+            if (statusEffects.reversed) {
+                const effect = document.createElement('div');
+                effect.className = 'effect reversed';
+                effect.textContent = '🔄 Controls Reversed';
+                statusDiv.appendChild(effect);
+            }
+            
+            if (statusEffects.empDisabled) {
+                const effect = document.createElement('div');
+                effect.className = 'effect emp';
+                effect.textContent = '⚡ Abilities Disabled';
+                statusDiv.appendChild(effect);
+            }
+        }
+        
+        function updatePlayerLabels() {
+            const player1Label = document.querySelector('.player1-label');
+            const player2Label = document.querySelector('.player2-label');
+            
+            if (playerNumber === 1) {
+                player1Label.textContent = 'Player 1 (YOU)';
+                player2Label.textContent = 'Player 2 (OPPONENT)';
+            } else {
+                player1Label.textContent = 'Player 1 (OPPONENT)';
+                player2Label.textContent = 'Player 2 (YOU)';
+            }
+        }
+        
+        function updateStatus(message) {
+            document.getElementById('gameStatus').textContent = message;
+        }
+        
+        function showGameOver(data) {
+            const gameOverDiv = document.getElementById('gameOver');
+            const titleElement = document.getElementById('gameOverTitle');
+            const messageElement = document.getElementById('gameOverMessage');
+            
+            if (data.winner === playerNumber) {
+                titleElement.textContent = '🎉 Victory! 🎉';
+                titleElement.style.color = '#2ecc71';
+                messageElement.textContent = `You won! Your opponent was defeated by ${data.cause}.`;
+            } else {
+                titleElement.textContent = '💥 Defeat 💥';
+                titleElement.style.color = '#e74c3c';
+                messageElement.textContent = `You lost! You were defeated by ${data.cause}.`;
+            }
+            
+            gameOverDiv.style.display = 'block';
+        }
+        
+        // Initialize the game
+        window.addEventListener('load', () => {
+            initSocket();
+        });
+        
+        // Add seeded random number generator if not available
+        if (!Math.seedrandom) {
+            Math.seedrandom = function(seed) {
+                let m = 0x80000000;
+                let a = 1103515245;
+                let c = 12345;
+                
+                seed = parseInt(seed, 10) || Math.floor(Math.random() * m);
+                
+                return function() {
+                    seed = (a * seed + c) % m;
+                    return seed / (m - 1);
+                };
+            };
+        }
+    </script>
+</body>
+</html>
