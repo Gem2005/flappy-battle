@@ -21,7 +21,14 @@ const io = socketIo(server, {
   connectTimeout: 45000,
   allowUpgrades: false,
   cookie: false,
-  serveClient: false
+  serveClient: false,
+  maxHttpBufferSize: 1e8
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Error:', err);
+  res.status(500).json({ error: 'Internal Server Error' });
 });
 
 // Serve static files from public directory
@@ -32,14 +39,20 @@ app.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
 
-// Add Socket.IO endpoint
+// Add Socket.IO endpoint with proper error handling
 app.get('/socket.io/', (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,Content-Type,Accept');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.send('Socket.IO endpoint');
+  try {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,Content-Type,Accept');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Connection', 'keep-alive');
+    res.send('Socket.IO endpoint');
+  } catch (error) {
+    console.error('Socket.IO endpoint error:', error);
+    res.status(500).send('Internal Server Error');
+  }
 });
 
 // Game state management
@@ -129,86 +142,104 @@ class GameRoom {
   }
 }
 
-// Socket connection handling
+// Socket connection handling with error handling
 io.on('connection', (socket) => {
-  console.log(`Player connected: ${socket.id}`);
-  
-  // Add player to waiting queue
-  socket.emit('searching');
-  waitingPlayers.push(socket);
-  
-  // Try to match players
-  matchPlayers();
-  
-  // Handle player events
-  socket.on('playerReady', () => {
-    if (socket.roomId) {
-      const room = activeRooms.get(socket.roomId);
-      if (room) {
-        const playerKey = socket.playerNumber === 1 ? 'player1' : 'player2';
-        room.players[playerKey].ready = true;
-        
-        // Check if both players are ready
-        if (room.players.player1.ready && room.players.player2.ready) {
-          room.startGame();
+  try {
+    console.log(`Player connected: ${socket.id}`);
+    
+    // Add player to waiting queue
+    socket.emit('searching');
+    waitingPlayers.push(socket);
+    
+    // Try to match players
+    matchPlayers();
+    
+    // Handle player events with error handling
+    socket.on('playerReady', () => {
+      try {
+        if (socket.roomId) {
+          const room = activeRooms.get(socket.roomId);
+          if (room) {
+            const playerKey = socket.playerNumber === 1 ? 'player1' : 'player2';
+            room.players[playerKey].ready = true;
+            
+            // Check if both players are ready
+            if (room.players.player1.ready && room.players.player2.ready) {
+              room.startGame();
+            }
+          }
+        }
+      } catch (error) {
+        console.error('playerReady error:', error);
+        socket.emit('error', 'Error processing ready state');
+      }
+    });
+    
+    // Relay game events to opponent
+    socket.on('playerFlap', (data) => {
+      if (socket.roomId) {
+        socket.to(socket.roomId).emit('opponentFlap', {
+          playerNumber: socket.playerNumber,
+          ...data
+        });
+      }
+    });
+    
+    socket.on('playerPosition', (data) => {
+      if (socket.roomId) {
+        socket.to(socket.roomId).emit('opponentPosition', {
+          playerNumber: socket.playerNumber,
+          ...data
+        });
+      }
+    });
+    
+    socket.on('abilityUsed', (data) => {
+      if (socket.roomId) {
+        socket.to(socket.roomId).emit('opponentAbility', {
+          playerNumber: socket.playerNumber,
+          ...data
+        });
+      }
+    });
+    
+    socket.on('playerDeath', (data) => {
+      if (socket.roomId) {
+        const room = activeRooms.get(socket.roomId);
+        if (room) {
+          room.handlePlayerDeath(socket.playerNumber, data.cause);
         }
       }
-    }
-  });
-  
-  // Relay game events to opponent
-  socket.on('playerFlap', (data) => {
-    if (socket.roomId) {
-      socket.to(socket.roomId).emit('opponentFlap', {
-        playerNumber: socket.playerNumber,
-        ...data
-      });
-    }
-  });
-  
-  socket.on('playerPosition', (data) => {
-    if (socket.roomId) {
-      socket.to(socket.roomId).emit('opponentPosition', {
-        playerNumber: socket.playerNumber,
-        ...data
-      });
-    }
-  });
-  
-  socket.on('abilityUsed', (data) => {
-    if (socket.roomId) {
-      socket.to(socket.roomId).emit('opponentAbility', {
-        playerNumber: socket.playerNumber,
-        ...data
-      });
-    }
-  });
-  
-  socket.on('playerDeath', (data) => {
-    if (socket.roomId) {
-      const room = activeRooms.get(socket.roomId);
-      if (room) {
-        room.handlePlayerDeath(socket.playerNumber, data.cause);
-      }
-    }
-  });
-  
-  socket.on('disconnect', () => {
-    console.log(`Player disconnected: ${socket.id}`);
+    });
     
-    // Remove from waiting players
-    waitingPlayers = waitingPlayers.filter(p => p.id !== socket.id);
+    socket.on('error', (error) => {
+      console.error('Socket error:', error);
+    });
     
-    // Handle room cleanup if in active game
-    if (socket.roomId) {
-      const room = activeRooms.get(socket.roomId);
-      if (room && !room.gameState.gameOver) {
-        // Notify opponent of disconnection
-        socket.to(socket.roomId).emit('opponentDisconnected');
-        room.cleanup();
+    socket.on('disconnect', () => {
+      try {
+        console.log(`Player disconnected: ${socket.id}`);
+        
+        // Remove from waiting players
+        waitingPlayers = waitingPlayers.filter(p => p.id !== socket.id);
+        
+        // Handle room cleanup if in active game
+        if (socket.roomId) {
+          const room = activeRooms.get(socket.roomId);
+          if (room && !room.gameState.gameOver) {
+            // Notify opponent of disconnection
+            socket.to(socket.roomId).emit('opponentDisconnected');
+            room.cleanup();
+          }
+        }
+      } catch (error) {
+        console.error('Disconnect error:', error);
       }
-    }
-  });
+    });
+  } catch (error) {
+    console.error('Connection error:', error);
+    socket.emit('error', 'Connection error');
+  }
 });
 
 function matchPlayers() {

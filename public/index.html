@@ -242,6 +242,8 @@
         let roomId = null;
         let gameStarted = false;
         let gameSeed = null;
+        let connectionAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 5;
         
         // Game objects
         let player1Bird, player2Bird;
@@ -278,7 +280,7 @@
                 upgrade: false,
                 rememberUpgrade: false,
                 reconnection: true,
-                reconnectionAttempts: 5,
+                reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
                 reconnectionDelay: 1000,
                 timeout: 20000,
                 forceNew: true,
@@ -287,90 +289,108 @@
             };
             
             console.log('Initializing socket with options:', socketOptions);
-            socket = io(socketOptions);
             
-            socket.on('connect', () => {
-                console.log('Connected to server');
-                updateStatus('Connected to server');
-            });
-            
-            socket.on('connect_error', (error) => {
-                console.error('Connection error:', error);
-                updateStatus('Connection error. Retrying...');
-            });
-            
-            socket.on('disconnect', (reason) => {
-                console.log('Disconnected:', reason);
-                updateStatus('Disconnected from server');
-            });
-            
-            socket.on('searching', () => {
-                updateStatus('Searching for opponent...');
-            });
-            
-            socket.on('matchFound', (data) => {
-                roomId = data.roomId;
-                playerNumber = data.playerNumber;
-                document.getElementById('roomInfo').textContent = roomId;
-                updateStatus('Match found! Preparing game...');
+            try {
+                socket = io(socketOptions);
                 
-                // Hide search screen and show game
-                document.getElementById('searchScreen').style.display = 'none';
-                document.getElementById('ui').style.display = 'block';
-                
-                // Initialize Phaser game
-                initPhaserGame();
-                
-                // Signal ready
-                socket.emit('playerReady');
-            });
-            
-            socket.on('gameStart', (data) => {
-                gameSeed = data.seed;
-                gameStarted = true;
-                updateStatus('Game Started!');
-                initRandomSeed(gameSeed);
-                startGameLoop();
-            });
-            
-            socket.on('playerAssignment', (data) => {
-                playerNumber = data.playerNumber;
-                updatePlayerLabels();
-            });
-            
-            socket.on('opponentFlap', (data) => {
-                if (data.playerNumber === 1 && player1Bird && data.playerNumber !== playerNumber) {
-                    player1Bird.body.setVelocityY(-300);
-                } else if (data.playerNumber === 2 && player2Bird && data.playerNumber !== playerNumber) {
-                    player2Bird.body.setVelocityY(-300);
-                }
-            });
-            
-            socket.on('opponentPosition', (data) => {
-                if (data.playerNumber !== playerNumber) {
-                    const bird = data.playerNumber === 1 ? player1Bird : player2Bird;
-                    if (bird) {
-                        bird.y = data.y;
-                        bird.body.setVelocityY(data.velocityY);
-                    }
-                }
-            });
-            
-            socket.on('opponentAbility', (data) => {
-                handleOpponentAbility(data);
-            });
-            
-            socket.on('gameOver', (data) => {
-                gameStarted = false;
-                showGameOver(data);
-            });
-            
-            socket.on('opponentDisconnected', () => {
-                showGameOver({
-                    winner: playerNumber,
-                    cause: 'opponent disconnected'
+                socket.on('connect', () => {
+                    console.log('Connected to server');
+                    connectionAttempts = 0;
+                    updateStatus('Connected to server');
                 });
-            });
+                
+                socket.on('connect_error', (error) => {
+                    console.error('Connection error:', error);
+                    connectionAttempts++;
+                    
+                    if (connectionAttempts >= MAX_RECONNECT_ATTEMPTS) {
+                        updateStatus('Connection failed. Please refresh the page.');
+                    } else {
+                        updateStatus(`Connection error. Retrying... (${connectionAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+                    }
+                });
+                
+                socket.on('error', (error) => {
+                    console.error('Socket error:', error);
+                    updateStatus('Connection error. Please refresh the page.');
+                });
+                
+                socket.on('disconnect', (reason) => {
+                    console.log('Disconnected:', reason);
+                    updateStatus('Disconnected from server');
+                });
+                
+                socket.on('searching', () => {
+                    updateStatus('Searching for opponent...');
+                });
+                
+                socket.on('matchFound', (data) => {
+                    roomId = data.roomId;
+                    playerNumber = data.playerNumber;
+                    document.getElementById('roomInfo').textContent = roomId;
+                    updateStatus('Match found! Preparing game...');
+                    
+                    // Hide search screen and show game
+                    document.getElementById('searchScreen').style.display = 'none';
+                    document.getElementById('ui').style.display = 'block';
+                    
+                    // Initialize Phaser game
+                    initPhaserGame();
+                    
+                    // Signal ready
+                    socket.emit('playerReady');
+                });
+                
+                socket.on('gameStart', (data) => {
+                    gameSeed = data.seed;
+                    gameStarted = true;
+                    updateStatus('Game Started!');
+                    initRandomSeed(gameSeed);
+                    startGameLoop();
+                });
+                
+                socket.on('playerAssignment', (data) => {
+                    playerNumber = data.playerNumber;
+                    updatePlayerLabels();
+                });
+                
+                socket.on('opponentFlap', (data) => {
+                    if (data.playerNumber === 1 && player1Bird && data.playerNumber !== playerNumber) {
+                        player1Bird.body.setVelocityY(-300);
+                    } else if (data.playerNumber === 2 && player2Bird && data.playerNumber !== playerNumber) {
+                        player2Bird.body.setVelocityY(-300);
+                    }
+                });
+                
+                socket.on('opponentPosition', (data) => {
+                    if (data.playerNumber !== playerNumber) {
+                        const bird = data.playerNumber === 1 ? player1Bird : player2Bird;
+                        if (bird) {
+                            bird.y = data.y;
+                            bird.body.setVelocityY(data.velocityY);
+                        }
+                    }
+                });
+                
+                socket.on('opponentAbility', (data) => {
+                    handleOpponentAbility(data);
+                });
+                
+                socket.on('gameOver', (data) => {
+                    gameStarted = false;
+                    showGameOver(data);
+                });
+                
+                socket.on('opponentDisconnected', () => {
+                    showGameOver({
+                        winner: playerNumber,
+                        cause: 'opponent disconnected'
+                    });
+                });
+            } catch (error) {
+                console.error('Socket initialization error:', error);
+                updateStatus('Failed to initialize connection. Please refresh the page.');
+            }
         }
         
         // Seeded random number generator
