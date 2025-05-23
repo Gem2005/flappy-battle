@@ -2,8 +2,18 @@
   "version": 2,
   "routes": [
     {
+      "src": "/socket.io/(.*)",
+      "dest": "server.js"
+    },
+    {
       "src": "/(.*)",
       "dest": "server.js"
     }
-  ]
+  ],
+  "functions": {
+    "server.js": {
+      "memory": 1024,
+      "maxDuration": 10
+    }
+  }
 } 

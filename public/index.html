@@ -272,7 +272,33 @@
         
         // Initialize socket connection
         function initSocket() {
-            socket = io();
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host;
+            
+            socket = io({
+                transports: ['websocket', 'polling'],
+                upgrade: true,
+                rememberUpgrade: true,
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000,
+                timeout: 20000
+            });
+            
+            socket.on('connect', () => {
+                console.log('Connected to server');
+                updateStatus('Connected to server');
+            });
+            
+            socket.on('connect_error', (error) => {
+                console.error('Connection error:', error);
+                updateStatus('Connection error. Retrying...');
+            });
+            
+            socket.on('disconnect', (reason) => {
+                console.log('Disconnected:', reason);
+                updateStatus('Disconnected from server');
+            });
             
             socket.on('searching', () => {
                 updateStatus('Searching for opponent...');

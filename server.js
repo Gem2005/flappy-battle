@@ -8,12 +8,22 @@ const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"]
-  }
+    methods: ["GET", "POST"],
+    transports: ['websocket', 'polling'],
+    credentials: true
+  },
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Add a health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
+});
 
 // Game state management
 let waitingPlayers = [];
@@ -204,6 +214,13 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Game available at: http://localhost:${PORT}`);
+});
+
+// Handle WebSocket upgrade
+server.on('upgrade', (request, socket, head) => {
+  io.handleUpgrade(request, socket, head, (ws) => {
+    io.emit('connection', ws, request);
+  });
 });
 
 // Graceful shutdown
