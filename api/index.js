@@ -216,5 +216,5 @@ server.on('upgrade', (request, socket, head) => {
   });
 });
 
-// Export the server for Vercel
-module.exports = server; 
+// Export the Express app for Vercel
+module.exports = app; 
