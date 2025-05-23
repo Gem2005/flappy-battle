@@ -272,14 +272,10 @@
         
         // Initialize socket connection
         function initSocket() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const host = window.location.host;
-            
             socket = io({
                 path: '/socket.io/',
-                transports: ['websocket', 'polling'],
-                upgrade: true,
-                rememberUpgrade: true,
+                transports: ['polling'],
+                upgrade: false,
                 reconnection: true,
                 reconnectionAttempts: 5,
                 reconnectionDelay: 1000,

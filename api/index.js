@@ -9,12 +9,15 @@ const io = socketIo(server, {
   cors: {
     origin: "*",
     methods: ["GET", "POST"],
-    transports: ['websocket', 'polling'],
     credentials: true
   },
+  path: '/socket.io/',
+  transports: ['polling'],
   allowEIO3: true,
   pingTimeout: 60000,
-  pingInterval: 25000
+  pingInterval: 25000,
+  connectTimeout: 45000,
+  allowUpgrades: false
 });
 
 // Serve static files from public directory
