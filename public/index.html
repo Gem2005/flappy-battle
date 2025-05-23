@@ -285,13 +285,17 @@
                 timeout: 20000,
                 forceNew: true,
                 autoConnect: true,
-                rejectUnauthorized: false
+                rejectUnauthorized: false,
+                extraHeaders: {
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Connection': 'keep-alive'
+                }
             };
             
             console.log('Initializing socket with options:', socketOptions);
             
             try {
-                socket = io(socketOptions);
+                socket = io(window.location.origin, socketOptions);
                 
                 socket.on('connect', () => {
                     console.log('Connected to server');
@@ -307,6 +311,9 @@
                         updateStatus('Connection failed. Please refresh the page.');
                     } else {
                         updateStatus(`Connection error. Retrying... (${connectionAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+                        setTimeout(() => {
+                            socket.connect();
+                        }, 1000 * connectionAttempts);
                     }
                 });
                 

@@ -23,8 +23,17 @@
       "src": "/(.*)",
       "dest": "/api/index.js",
       "headers": {
-        "Cache-Control": "public, max-age=0, must-revalidate"
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+        "Access-Control-Allow-Headers": "X-Requested-With,Content-Type,Accept",
+        "Access-Control-Allow-Credentials": "true"
       }
     }
-  ]
+  ],
+  "functions": {
+    "api/index.js": {
+      "memory": 1024,
+      "maxDuration": 10
+    }
+  }
 } 
