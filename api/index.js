@@ -5,6 +5,8 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
+
+// Configure Socket.IO with polling transport
 const io = socketIo(server, {
   cors: {
     origin: "*",
@@ -17,7 +19,9 @@ const io = socketIo(server, {
   pingTimeout: 60000,
   pingInterval: 25000,
   connectTimeout: 45000,
-  allowUpgrades: false
+  allowUpgrades: false,
+  cookie: false,
+  serveClient: false
 });
 
 // Serve static files from public directory
@@ -26,6 +30,16 @@ app.use(express.static(path.join(__dirname, '../public')));
 // Add a health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).send('OK');
+});
+
+// Add Socket.IO endpoint
+app.get('/socket.io/', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,Content-Type,Accept');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.send('Socket.IO endpoint');
 });
 
 // Game state management

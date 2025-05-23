@@ -272,17 +272,22 @@
         
         // Initialize socket connection
         function initSocket() {
-            socket = io({
+            const socketOptions = {
                 path: '/socket.io/',
                 transports: ['polling'],
                 upgrade: false,
+                rememberUpgrade: false,
                 reconnection: true,
                 reconnectionAttempts: 5,
                 reconnectionDelay: 1000,
                 timeout: 20000,
                 forceNew: true,
-                autoConnect: true
-            });
+                autoConnect: true,
+                rejectUnauthorized: false
+            };
+            
+            console.log('Initializing socket with options:', socketOptions);
+            socket = io(socketOptions);
             
             socket.on('connect', () => {
                 console.log('Connected to server');
