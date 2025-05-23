@@ -3,11 +3,11 @@
   "routes": [
     {
       "src": "/socket.io/(.*)",
-      "dest": "server.js"
+      "dest": "/api"
     },
     {
       "src": "/(.*)",
-      "dest": "server.js"
+      "dest": "/api"
     }
   ],
   "functions": {

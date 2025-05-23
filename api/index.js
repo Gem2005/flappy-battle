@@ -18,7 +18,7 @@ const io = socketIo(server, {
 });
 
 // Serve static files from public directory
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, '../public')));
 
 // Add a health check endpoint
 app.get('/health', (req, res) => {
@@ -209,13 +209,6 @@ function matchPlayers() {
   }
 }
 
-// Start server
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Game available at: http://localhost:${PORT}`);
-});
-
 // Handle WebSocket upgrade
 server.on('upgrade', (request, socket, head) => {
   io.handleUpgrade(request, socket, head, (ws) => {
@@ -223,11 +216,5 @@ server.on('upgrade', (request, socket, head) => {
   });
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('Server shutting down...');
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
+// Export the server for Vercel
+module.exports = server; 
